@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zinthorr's World — Google Earth WebXR</title>
+  <link rel="stylesheet" href="./style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://esm.sh/three@0.170.0",
+        "three/addons/": "https://esm.sh/three@0.170.0/examples/jsm/",
+        "3d-tiles-renderer": "https://esm.sh/3d-tiles-renderer@0.4.20?deps=three@0.170.0",
+        "3d-tiles-renderer/three/plugins": "https://esm.sh/3d-tiles-renderer@0.4.20/three/plugins?deps=three@0.170.0",
+        "3d-tiles-renderer/core/plugins": "https://esm.sh/3d-tiles-renderer@0.4.20/core/plugins?deps=three@0.170.0",
+        "topojson-client": "https://esm.sh/topojson-client@3.1.0"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <div id="hud-body">
+      <h1>Zinthorr's World <span class="badge">v1.6.2</span></h1>
+      <div id="status">Loading Google 3D Earth...</div>
+      <div id="coords">Lat: -- | Lng: -- | Alt: --</div>
+      <p class="help">
+        <strong>PC:</strong> <strong>WASD</strong> Fly (+Shift Boost) • Drag pan • Q/E rotate • Scroll zoom • <strong>M</strong> Menu • L Labels • Esc Exit<br />
+        <strong>Galaxy XR:</strong> A/X Fly (+Trigger Boost) • Sticks Zoom • Grip Rotate (L3 North-Up) • <strong>Dom B/Y</strong> Menu
+      </p>
+    </div>
+    <button id="hud-toggle-btn" title="Minimize / Expand HUD">◀</button>
+  </div>
+
+  <!-- Active Game Banner (GeoGuessr / Map Tap) -->
+  <div id="game-banner" class="hidden">
+    <div id="game-banner-title">Round 1/5</div>
+    <div id="game-banner-prompt">Find: Tokyo, Japan</div>
+    <div id="game-banner-meta">
+      <span id="game-banner-timer"></span>
+      <span id="game-banner-score">Score: 0</span>
+    </div>
+    <div id="game-banner-actions">
+      <button id="game-action-primary" class="sv-btn ready hidden">LOCK IN GUESS</button>
+      <button id="game-action-menu" class="sv-btn fly-btn">OPEN MAP / GUESS (M)</button>
+      <button id="game-action-quit" class="sv-btn exit">QUIT GAME</button>
+    </div>
+  </div>
+
+  <!-- Desktop 2D Minimap & Street View Button -->
+  <div id="desktop-minimap">
+    <canvas id="minimap-canvas" width="512" height="512" title="Click or press M to open Menu"></canvas>
+    <div id="sv-status-text">Zoom closer to a road for Street View</div>
+    <button id="sv-toggle-btn" class="sv-btn disabled" disabled>NO STREET VIEW NEARBY</button>
+    <button id="open-search-btn" class="sv-btn search-open-btn">MAIN MENU / GAMES (M)</button>
+  </div>
+
+  <!-- Desktop 6-Tab Main Menu Modal -->
+  <div id="search-modal" class="hidden">
+    <div class="search-card">
+      <div class="search-header">
+        <div class="menu-tabs">
+          <button class="menu-tab-btn active" data-tab="map">Map</button>
+          <button class="menu-tab-btn" data-tab="search">Search</button>
+          <button class="menu-tab-btn" data-tab="bookmarks">Bookmarks</button>
+          <button class="menu-tab-btn" data-tab="featured">Featured</button>
+          <button class="menu-tab-btn" data-tab="geoguessr">GeoGuessr</button>
+          <button class="menu-tab-btn" data-tab="maptap">Map Tap</button>
+          <button class="menu-tab-btn" data-tab="settings">Settings</button>
+          <button class="menu-tab-btn" data-tab="controls">Controls</button>
+        </div>
+        <button id="search-close-btn" class="close-x">✕</button>
+      </div>
+
+      <!-- TAB 1: Interactive 2D Map (Also used for GeoGuessr Guessing) -->
+      <div id="tab-map" class="menu-tab-panel">
+        <div class="expanded-map-wrap">
+          <canvas id="expanded-map-canvas" width="952" height="500"></canvas>
+          <div class="map-overlay-btns">
+            <button id="map-zoom-in" class="map-mini-btn">+</button>
+            <button id="map-zoom-out" class="map-mini-btn">−</button>
+            <button id="map-center-me" class="map-mini-btn wide">Center Me</button>
+            <button id="map-save-btn" class="map-mini-btn wide accent">★ Save Spot</button>
+            <button id="map-lucky-btn" class="map-mini-btn wide lucky">🎲 Lucky</button>
+          </div>
+        </div>
+        <div id="map-round-result" class="round-result hidden"></div>
+      </div>
+
+      <!-- TAB 2: Address Search -->
+      <div id="tab-search" class="menu-tab-panel hidden">
+        <input
+          id="search-input"
+          type="text"
+          placeholder="Search a city, address, or landmark..."
+          autocomplete="off"
+        />
+        <div id="search-results"></div>
+      </div>
+
+      <!-- TAB 3: Bookmarks -->
+      <div id="tab-bookmarks" class="menu-tab-panel hidden">
+        <div class="panel-toolbar">
+          <span class="panel-hint">Saved places with coordinates &amp; street addresses</span>
+          <button id="bm-save-current-btn" class="sv-btn ready compact-btn">★ SAVE CURRENT SPOT</button>
+        </div>
+        <div id="bookmarks-list" class="places-list"></div>
+      </div>
+
+      <!-- TAB 4: Featured Places -->
+      <div id="tab-featured" class="menu-tab-panel hidden">
+        <div class="panel-toolbar">
+          <span class="panel-hint">Curated 3D Earth &amp; Street View highlights</span>
+          <button id="feat-lucky-btn" class="sv-btn fly-btn compact-btn">🎲 I'M FEELING LUCKY</button>
+        </div>
+        <div id="featured-list" class="places-list"></div>
+      </div>
+
+      <!-- TAB 3: GeoGuessr -->
+      <div id="tab-geoguessr" class="menu-tab-panel hidden">
+        <div id="gg-best-badge" class="best-badge">Personal Best: -- / 25,000</div>
+        <div id="gg-challenge-notice" class="challenge-notice hidden"></div>
+        <div class="setting-row">
+          <div>
+            <strong>Movement Mode</strong>
+            <span>Allow walking down streets or lock to starting panorama</span>
+          </div>
+          <div class="toggle-group">
+            <button id="gg-opt-move" class="toggle-btn active">Move</button>
+            <button id="gg-opt-nomove" class="toggle-btn">No Move</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <strong>Round Timer</strong>
+            <span>Relaxed untimed or 3 minutes per round</span>
+          </div>
+          <div class="toggle-group">
+            <button id="gg-opt-untimed" class="toggle-btn active">Untimed</button>
+            <button id="gg-opt-timed" class="toggle-btn">3 Min / Rd</button>
+          </div>
+        </div>
+        <div id="gg-summary" class="game-summary hidden"></div>
+        <div class="search-actions">
+          <button id="gg-start-btn" class="sv-btn ready">START 5-ROUND GEOGUESSR</button>
+          <button id="gg-quit-btn" class="sv-btn exit hidden">END CURRENT GAME</button>
+          <button id="gg-copy-link-btn" class="sv-btn fly-btn hidden">COPY CHALLENGE LINK</button>
+        </div>
+      </div>
+
+      <!-- TAB 4: Map Tap -->
+      <div id="tab-maptap" class="menu-tab-panel hidden">
+        <div id="mt-best-badge" class="best-badge">Personal Best: -- / 25,000</div>
+        <div id="mt-challenge-notice" class="challenge-notice hidden"></div>
+        <div class="setting-row">
+          <div>
+            <strong>Round Timer</strong>
+            <span>Relaxed untimed or 30 seconds per round</span>
+          </div>
+          <div class="toggle-group">
+            <button id="mt-opt-untimed" class="toggle-btn active">Untimed</button>
+            <button id="mt-opt-timed" class="toggle-btn">30 Sec / Rd</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <strong>City Pool</strong>
+            <span>Major hubs, 220+ cities, or Hard Mode (100,000+ global towns)</span>
+          </div>
+          <div class="toggle-group">
+            <button id="mt-opt-major" class="toggle-btn active">Major</button>
+            <button id="mt-opt-all" class="toggle-btn">All 220+</button>
+            <button id="mt-opt-hard" class="toggle-btn">Hard (100k+)</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <strong>Region Filter</strong>
+            <span>Focus on a specific continent or play the whole world</span>
+          </div>
+          <div class="toggle-group">
+            <button id="mt-reg-world" class="toggle-btn active">World</button>
+            <button id="mt-reg-na" class="toggle-btn">N. America</button>
+            <button id="mt-reg-eu" class="toggle-btn">Europe</button>
+            <button id="mt-reg-asia" class="toggle-btn">Asia</button>
+          </div>
+        </div>
+        <div id="mt-summary" class="game-summary hidden"></div>
+        <div class="search-actions">
+          <button id="mt-start-btn" class="sv-btn ready">START 5-ROUND MAP TAP</button>
+          <button id="mt-quit-btn" class="sv-btn exit hidden">END CURRENT GAME</button>
+          <button id="mt-copy-link-btn" class="sv-btn fly-btn hidden">COPY CHALLENGE LINK</button>
+        </div>
+      </div>
+
+      <!-- TAB 5: Settings -->
+      <div id="tab-settings" class="menu-tab-panel hidden">
+        <div class="setting-row">
+          <div>
+            <strong>3D Earth Turning (VR Stick)</strong>
+            <span>Instant 45° snap or continuous smooth rotation</span>
+          </div>
+          <div class="toggle-group">
+            <button id="set-3d-snap" class="toggle-btn">Snap 45°</button>
+            <button id="set-3d-smooth" class="toggle-btn">Smooth</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <strong>Street View Turning (VR Stick)</strong>
+            <span>Rotate 360° panorama while seated</span>
+          </div>
+          <div class="toggle-group">
+            <button id="set-sv-snap" class="toggle-btn">Snap 45°</button>
+            <button id="set-sv-smooth" class="toggle-btn">Smooth</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <strong>VR Comfort Vignette</strong>
+            <span>Darkens peripheral vision while moving to reduce motion sickness</span>
+          </div>
+          <div class="toggle-group">
+            <button id="set-vig-off" class="toggle-btn">Off</button>
+            <button id="set-vig-on" class="toggle-btn">On</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <strong>VR Handedness (Lefty Mode)</strong>
+            <span>Swaps wrist minimap, laser pointer, flight, and turning hands</span>
+          </div>
+          <div class="toggle-group">
+            <button id="set-hand-right" class="toggle-btn">Right-Handed</button>
+            <button id="set-hand-left" class="toggle-btn">Left-Handed</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <strong>Time of Day (Sky &amp; Lighting)</strong>
+            <span>Switch between Day, Golden Hour Sunset, or Starry Night</span>
+          </div>
+          <div class="toggle-group">
+            <button id="set-tod-day" class="toggle-btn active">Day</button>
+            <button id="set-tod-sunset" class="toggle-btn">Sunset</button>
+            <button id="set-tod-night" class="toggle-btn">Night</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <strong>UI &amp; Game Sound Effects</strong>
+            <span>Subtle clicks and chimes only (never interrupts background music)</span>
+          </div>
+          <div class="toggle-group">
+            <button id="set-sfx-on" class="toggle-btn active">On</button>
+            <button id="set-sfx-off" class="toggle-btn">Muted</button>
+          </div>
+        </div>
+
+        <details class="custom-key-box" open>
+          <summary>
+            <strong>Google Maps API Key (Required)</strong>
+            <span id="custom-key-status-pill" class="key-pill">API Key Required</span>
+          </summary>
+          <div class="custom-key-body">
+            <p class="custom-key-desc">
+              This GitHub version includes <strong>no built-in API key</strong>. To activate 3D Earth, 2D Maps, Search,
+              360° Street View, and GeoGuessr, enter your own free-tier Google Maps Platform API key below
+              (requires <em>Map Tiles API</em> and <em>Places API (New)</em>), or paste it on line 4 of <code>app.js</code>.
+              Keys entered here are stored <strong>locally in your browser only</strong> (<code>localStorage</code>) and are never sent to any third-party server.
+            </p>
+            <p class="custom-key-warn">
+              <strong>Disclaimer:</strong> This is an experimental, AI-assisted hobby project built by an independent developer.
+              On an unupgraded Google Cloud free-trial account, Google enforces locked daily caps (e.g., 15,000 Street View tiles/day)
+              and automatically shuts off at the limit instead of charging you. Always restrict your key by HTTP referrer.
+            </p>
+            <div class="custom-key-controls">
+              <input id="custom-key-input" type="text" placeholder="Paste your AIza... key here" autocomplete="off" />
+              <button id="custom-key-paste" type="button" class="toggle-btn">Paste</button>
+              <button id="custom-key-save" type="button" class="toggle-btn active">Save &amp; Reload</button>
+              <button id="custom-key-reset" type="button" class="toggle-btn">Clear Saved Key</button>
+            </div>
+            <div id="custom-key-feedback" class="custom-key-feedback hidden"></div>
+          </div>
+        </details>
+      </div>
+
+      <!-- TAB 6: Controls -->
+      <div id="tab-controls" class="menu-tab-panel hidden">
+        <ul id="controls-list" class="controls-list"></ul>
+      </div>
+
+      <!-- Shared Selected Location & Action Bar (Visible only on Map & Search tabs) -->
+      <div id="search-selected">Click the map to drop a pin</div>
+      <div id="shared-actions" class="search-actions">
+        <button id="search-fly-btn" class="sv-btn fly-btn" disabled>FLY TO 3D EARTH</button>
+        <button id="search-sv-btn" class="sv-btn ready" disabled>ENTER STREET VIEW</button>
+        <button id="gg-submit-btn" class="sv-btn ready hidden" disabled>SUBMIT GUESS</button>
+        <button id="gg-next-btn" class="sv-btn fly-btn hidden">NEXT ROUND</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="error-banner" class="hidden"></div>
+  <div id="attribution">Google Photorealistic 3D Tiles</div>
+
+  <script>
+    window.addEventListener("error", (e) => {
+      const banner = document.getElementById("error-banner");
+      banner.textContent = "Script Error: " + (e.message || e.filename);
+      banner.classList.remove("hidden");
+    });
+    window.addEventListener("unhandledrejection", (e) => {
+      const banner = document.getElementById("error-banner");
+      banner.textContent = "Load Error: " + (e.reason?.message || e.reason);
+      banner.classList.remove("hidden");
+    });
+  </script>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
