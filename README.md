@@ -29,7 +29,7 @@ A free, browser-based WebXR 3D Earth and 360° Street View explorer built for **
    * **Places API (New)** (powers address/landmark search)
 4. Go to **APIs & Services -> Credentials -> Create Credentials -> API Key**.
 5. Click your new key to restrict it:
-   * **Application restrictions:** Websites (HTTP referrers) -> add the URL where you host or open the app (for example, `https://your-site.netlify.app/*`, `https://your-username.github.io/*`, or `http://localhost:*`). If you are using the hosted demo instead, add `https://zinthorrsworld.netlify.app/*`.
+   * **Application restrictions:** Websites (HTTP referrers) -> add the URL where you host or open the app (for example, `https://your-site.netlify.app/`, `https://your-username.github.io/`, or `http://localhost:*`). If you are using the hosted demo instead, add `https://zinthorrsworld.netlify.app/`.
    * **API restrictions:** Restrict key to **Map Tiles API** and **Places API (New)**.
 
 ### Step 2: Plug Your Key Into the App (2 Options)
